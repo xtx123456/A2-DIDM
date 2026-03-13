@@ -82,26 +82,22 @@ def main():
     # 1) Teacher
     sd_teacher, victim_meta, victim_chain_dir = _load_teacher(args.victim)
 
-    # 选择架构类（优先 --arch，其次 victim metadata；都无则回退 ResNet18CIFAR）
-    # 注意：当 --victim 是单个 .pt 时，victim_chain_dir 为 None，此时 arch_utils 会根据 --arch 决定
+   
     chain_ref = victim_chain_dir if victim_chain_dir is not None else victim_meta
     ModelCls = get_model_cls_from_meta_or_arg(chain_ref, args.arch)
 
-    # 类别数：优先根据 --dataset；如果未来你要“自动推断”，也可用 infer_*：
-    # num_classes = infer_num_classes_from_meta_or_sd(victim_meta, sd_teacher, default=num_classes_cli)
-    num_classes = num_classes_cli
-
+    
     teacher = ModelCls(num_classes=num_classes).to(device)
     teacher.load_state_dict(sd_teacher, strict=True)
     teacher.eval()
     for p in teacher.parameters():
         p.requires_grad_(False)
 
-    # 2) Student (PoT init)
+   
     student = ModelCls(num_classes=num_classes).to(device)
     student.apply(apply_pot_init)
 
-    # 3) Data split (owner / aux) with partially-labeled attacker AUX
+   
     owner_ds, owner_val_set, aux_ds = make_owner_and_aux_sets(
         dataset,
         root=args.data,
@@ -140,7 +136,7 @@ def main():
     optimzr = torch.optim.SGD(student.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
     sched   = torch.optim.lr_scheduler.CosineAnnealingLR(optimzr, T_max=args.epochs)
 
-    # 4) Meta
+    
     os.makedirs(args.out, exist_ok=True)
     meta = {
         'epochs': int(args.epochs),
@@ -163,7 +159,7 @@ def main():
         'notes': 'val_acc = student-teacher agreement on held-out AUX slice; training uses KD on unlabeled AUX + (KD+CE) on labeled AUX',
     }
 
-    # 5) Build held-out AUX for agreement metric
+    
     heldout_imgs, heldout_teacher = [], []
     with torch.no_grad():
         collected = 0
@@ -189,7 +185,7 @@ def main():
             pred_t = heldout_teacher.argmax(1).to(device)
             return float((pred_s == pred_t).float().mean().item())
 
-    # 6) Save epoch_0000 (PoT init) for verification baselines
+   
     student.eval()
     val_agree0 = agreement_on_heldout()
     meta['train_acc'].append(None)
@@ -200,13 +196,13 @@ def main():
     with open(os.path.join(args.out, 'metadata.json'), 'w') as f:
         json.dump(meta, f, indent=2, allow_nan=False)
 
-    # 7) Re-init student so training doesn't reuse saved init
+   
     student = ModelCls(num_classes=num_classes).to(device)
     student.apply(apply_pot_init)
     optimzr = torch.optim.SGD(student.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
     sched   = torch.optim.lr_scheduler.CosineAnnealingLR(optimzr, T_max=args.epochs)
 
-    # 8) KD training
+    # KD training
     for epoch in range(1, args.epochs + 1):
         student.train()
         # 线性调度 tau / lambda（如你原逻辑）
